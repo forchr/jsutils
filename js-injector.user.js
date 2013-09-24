@@ -17,6 +17,18 @@ function injectExternalJS(url) {
     }
 }
 
+function injectExternalCss(url){
+    var head = document.getElementsByTagName("head")[0];
+
+    for (var i = 0; i < arguments.length; i++) {
+        var e = document.createElement("link");
+        e.setAttribute("type", "text/css");
+        e.setAttribute("rel", "stylesheet");
+        e.setAttribute("href", arguments[i]);
+        head.appendChild(e);
+    }
+}
+injectExternalCss("http://code.jquery.com/ui/jquery-ui-git.css");
 
 injectExternalJS("http://code.jquery.com/jquery-2.0.3.min.js",
 "http://underscorejs.org/underscore-min.js",
@@ -30,3 +42,4 @@ injectExternalJS("http://code.jquery.com/jquery-2.0.3.min.js",
 "http://underscorejs.org/underscore-min.js"
 );
 window.injectExternalJS = injectExternalJS;
+window.injectExternalCss = injectExternalCss;
