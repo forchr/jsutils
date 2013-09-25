@@ -20,7 +20,7 @@ function IndexesCombination(maxes, curs, mins) {
     if (!(curs instanceof Array)) {
         curs = new Array();
     }
-    
+
     var total = 1;
     for (var i = 0; i < maxes.length; i++) {
         if (maxes[i] < 0) {
@@ -39,7 +39,7 @@ function IndexesCombination(maxes, curs, mins) {
         } else if (curs[i] > maxes[i]) {
             curs[i] = maxes[i];
         }
-        
+
         total *= maxes[i] - mins[i] + 1;
     }
 
@@ -56,7 +56,23 @@ function IndexesCombination(maxes, curs, mins) {
             curs[i] = mins[i];
         }
     };
+    
+    this.getMins = function() {
+        var a = [];
+        for (var i = 0; i < maxes.length; i++) {
+            a[i] = mins[i];
+        }
+        return a;
+    };
 
+    this.getMaxes = function() {
+        var a = [];
+        for (var i = 0; i < maxes.length; i++) {
+            a[i] = maxes[i];
+        }
+        return a;
+    };
+    
     this.next = function(store) {
         if (!(store instanceof Array)) {
             throw "must supply a array to store indexes."
@@ -117,5 +133,9 @@ function IndexesCombination(maxes, curs, mins) {
                 && cur <= max) {
             curs[at] = cur;
         }
+    };
+
+    this.getIndexAt = function(at) {
+        return curs[at];
     };
 }
