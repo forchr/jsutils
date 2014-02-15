@@ -30,8 +30,7 @@ function injectExternalCss(url){
 }
 injectExternalCss("http://code.jquery.com/ui/jquery-ui-git.css");
 
-injectExternalJS("http://code.jquery.com/jquery-2.0.3.min.js",
-"http://underscorejs.org/underscore-min.js",
+injectExternalJS("http://code.jquery.com/jquery-2.1.0.min.js",
 "http://code.jquery.com/ui/jquery-ui-git.js",
 "https://raw.github.com/forchr/jsutils/master/jquery.simulate.js",
 "https://raw.github.com/j-ulrich/jquery-simulate-ext/master/libs/bililiteRange.js",
