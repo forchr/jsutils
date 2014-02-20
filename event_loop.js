@@ -34,10 +34,6 @@ var actionsConfig = {
             "afterFound": "doAnotherThing"
         }
     ],
-    eventInterval: 3000, //default interval millisecond between events.
-    maxFailFinds: 5, //when event needs find "selector",try find the element.
-    findInterval: 1500, //wait milliseconds between fail finds.
-    nextEventIndex: 0, //next event performed.
     //called before perform event.
     //return false to stop event.
     performBeforeEvent: function(actionsConfig, eventConfig) {
@@ -45,6 +41,13 @@ var actionsConfig = {
     //called after perform event.
     performAfterEvent: function(actionsConfig, eventConfig) {
     }
+};
+
+var defaultActionsConfig = {
+    eventInterval: 3000, //default interval millisecond between events.
+    maxFailFinds: 5, //when event needs find "selector",try find the element.
+    findInterval: 1500, //wait milliseconds between fail finds.
+    nextEventIndex: 0 //next event performed.
 };
 
 var loopConfig = {
@@ -173,9 +176,15 @@ function performEventLoop(actionsConfig) {
             }
             $e = jQuery(s);
             if ($e.length === 0) {
-//1. the id of another event;
-                //2. function;
-                //3. "stopApp": means stop the whole application.
+                if (!_.isNumber(eventConfig.failFindCount)) {
+                    eventConfig.failFindCount = 1;
+                } else {
+                    eventConfig.failFindCount++;
+                }
+                if (eventConfig.failFindCount < actionsConfig.maxFailFinds) {
+                    setEventLoopTimer(actionsConfig);
+                    return;
+                }
                 if (eventConfig.ifNone !== undefined && eventConfig.ifNone !== null) {
                     var eId;
                     if (_.isFunction(eventConfig.ifNone)) {
@@ -192,6 +201,8 @@ function performEventLoop(actionsConfig) {
                         return;
                     }
                 }
+            } else {
+                eventConfig.failFindCount = 0;
             }
         }
 
