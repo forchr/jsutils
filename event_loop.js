@@ -36,21 +36,19 @@ var actionsConfig = {
     ],
     //called before perform event.
     //return false to stop event.
-    performBeforeEvent: function(actionsConfig, eventConfig) {
+    performBeforeEvent: function(eventConfig) {
     },
     //called after perform event.
-    performAfterEvent: function(actionsConfig, eventConfig) {
+    performAfterEvent: function(eventConfig) {
     }
-};
-
-var defaultActionsConfig = {
+    ,
     eventInterval: 3000, //default interval millisecond between events.
     maxFailFinds: 5, //when event needs find "selector",try find the element.
     findInterval: 1500, //wait milliseconds between fail finds.
-    nextEventIndex: 0 //next event performed.
-};
-
-var loopConfig = {
+    nextEventIndex: 0, //next event performed.
+    loopCount: 0,
+    loopMax: 0//max event loop
+    ,
     "stopCommandReceived": false,
     "stopReason": "",
     "eventTimeoutId": null,
@@ -62,49 +60,59 @@ var loopConfig = {
             window.clearTimeout(this.eventTimeoutId);
         }
         console.info("app stop. reason: " + this.stopReason);
-    },
-    "stop": function(reason) {
-        this.stopCommandReceived = true;
-        this.stopReason = reason;
-        if (_.isFunction(this.afterStop)) {
-            this.afterStop();
-        }
     }
 };
 
-function eventLoopStopped() {
-    console.info("app stop. reason: " + loopConfig.stopReason);
-    if (loopConfig.eventTimeoutId !== undefined && loopConfig.eventTimeoutId !== null) {
-        window.clearTimeout(loopConfig.eventTimeoutId);
-        loopConfig.eventTimeoutId = null;
-    }
-    if (_.isFunction(loopConfig.afterStop)) {
-        loopConfig.afterStop();
-    }
-}
 
-function startEventLoop(actionsConfig) {
-    loopConfig.stopCommandReceived = false;
-    loopConfig.stopReason = "";
-    if (_.isFunction(loopConfig.beforeStart)) {
-        loopConfig.beforeStart();
+function startEventLoop() {
+    actionsConfig.stopCommandReceived = false;
+    actionsConfig.stopReason = "";
+    if (_.isFunction(actionsConfig.beforeStart)) {
+        actionsConfig.beforeStart();
     }
     setEventLoopTimer(actionsConfig);
 }
 
-function setEventLoopTimer(actionsConfig, intervalMillis) {
-    if (loopConfig.stopCommandReceived) {
+function stopEventLoop(reason) {
+    actionsConfig.stopCommandReceived = true;
+    actionsConfig.stopReason = reason;
+    if (_.isFunction(actionsConfig.afterStop)) {
+        actionsConfig.afterStop();
+    }
+}
+
+function eventLoopStopped() {
+    console.info("app stop. reason: " + actionsConfig.stopReason);
+    if (actionsConfig.eventTimeoutId !== undefined && actionsConfig.eventTimeoutId !== null) {
+        window.clearTimeout(actionsConfig.eventTimeoutId);
+        actionsConfig.eventTimeoutId = null;
+    }
+    if (_.isFunction(actionsConfig.afterStop)) {
+        actionsConfig.afterStop();
+    }
+}
+
+
+function setEventLoopTimer(intervalMillis) {
+    if (actionsConfig.stopCommandReceived) {
         eventLoopStopped();
         return;
     }
+    checkNextEventIndex(actionsConfig);
+    if (actionsConfig.nextEventIndex === 0) {
+        actionsConfig.loopCount++;
+        if (actionsConfig.loopMax > 0 && actionsConfig.loopCount > actionsConfig.loopMax) {
+            stopEventLoop("arrives loopMax: " + actionsConfig.loopMax);
+            return;
+        }
+    }
     if (intervalMillis === undefined || intervalMillis < 0) {
-        checkNextEventIndex(actionsConfig);
         intervalMillis = actionsConfig.events[actionsConfig.nextEventIndex].waitBeforeMillis;
         if (intervalMillis === undefined || intervalMillis < 0) {
             intervalMillis = actionsConfig.eventInterval >= 0 ? actionsConfig.eventInterval : 3000;
         }
     }
-    loopConfig.eventTimeoutId = setTimeout(function() {
+    actionsConfig.eventTimeoutId = setTimeout(function() {
         performEventLoop(actionsConfig);
     }, intervalMillis);
 }
@@ -115,7 +123,7 @@ function setEventLoopTimer(actionsConfig, intervalMillis) {
  * @param {type} eventId
  * @returns {Number}
  */
-function findEventConfigById(actionsConfig, eventId) {
+function findEventConfigById(eventId) {
     if (_.isArray(actionsConfig.events)) {
         for (var i = 0; i < actionsConfig.events.length; i++) {
             if (actionsConfig.events[i].id === eventId) {
@@ -126,10 +134,10 @@ function findEventConfigById(actionsConfig, eventId) {
     return null;
 }
 
-function startNextEventLoopTimerById(actionsConfig, eId) {
-    var i = findEventConfigById(actionsConfig, eId);
+function startNextEventLoopTimerById(eId) {
+    var i = findEventConfigById(eId);
     if (i === null) {
-        loopConfig.stop("can't found event config with id: " + eId);
+        stopEventLoop("can't found event config with id: " + eId);
     } else {
         actionsConfig.nextEventIndex = i;
         setEventLoopTimer(actionsConfig);
@@ -145,19 +153,19 @@ function checkNextEventIndex(actionsConfig) {
     }
 }
 function performEventLoop(actionsConfig) {
-    if (loopConfig.stopCommandReceived) {
+    if (actionsConfig.stopCommandReceived) {
         eventLoopStopped();
         return;
     }
     if (!_.isArray(actionsConfig.events) || actionsConfig.events.length === 0) {
-        loopConfig.stop("没事件序列！");
+        stopEventLoop("没事件序列！");
         return;
     }
     checkNextEventIndex(actionsConfig);
     var eventConfig = actionsConfig.events[actionsConfig.nextEventIndex];
     var performAllowed = true;
     if (_.isFunction(actionsConfig.performBeforeEvent)) {
-        var s = actionsConfig.performBeforeEvent(actionsConfig, eventConfig);
+        var s = actionsConfig.performBeforeEvent(eventConfig);
         if (s === false) {
             performAllowed = false;
         }
@@ -167,11 +175,11 @@ function performEventLoop(actionsConfig) {
         if (eventConfig.selector !== undefined && eventConfig.selector !== null) {
             var s;
             if (_.isFunction(eventConfig.selector)) {
-                s = eventConfig.selector(actionsConfig, eventConfig);
+                s = eventConfig.selector(eventConfig);
             } else if (_.isString(eventConfig.selector)) {
                 s = eventConfig.selector;
             } else {
-                loopConfig.stop("wrong selector:" + eventConfig.selector + " of " + eventConfig.id);
+                stopEventLoop("wrong selector:" + eventConfig.selector + " of " + eventConfig.id);
                 return;
             }
             $e = jQuery(s);
@@ -188,15 +196,15 @@ function performEventLoop(actionsConfig) {
                 if (eventConfig.ifNone !== undefined && eventConfig.ifNone !== null) {
                     var eId;
                     if (_.isFunction(eventConfig.ifNone)) {
-                        eId = eventConfig.ifNone(actionsConfig, eventConfig);
+                        eId = eventConfig.ifNone(eventConfig);
                     } else if (_.isString(eventConfig.ifNone) && eventConfig.ifNone.length > 0) {
                         eId = eventConfig.ifNone;
                     }
                     if (eId) {
                         if (eId === "stopApp") {
-                            loopConfig.stop("can't found: " + $e.selector);
+                            stopEventLoop("can't found: " + $e.selector);
                         } else {
-                            startNextEventLoopTimerById(actionsConfig, eId);
+                            startNextEventLoopTimerById(eId);
                         }
                         return;
                     }
@@ -209,9 +217,9 @@ function performEventLoop(actionsConfig) {
         var startedNextEventLoop = false;
         //***perform event***        
         if (_.isFunction(eventConfig.event)) {
-            var eId = eventConfig.event(actionsConfig, eventConfig, $e);
+            var eId = eventConfig.event(eventConfig, $e);
             if (eId && _.isString(eId)) {
-                startNextEventLoopTimerById(actionsConfig, eId);
+                startNextEventLoopTimerById(eId);
                 startedNextEventLoop = true;
             }
         } else if ($e !== undefined && $e.length > 0 && _.isString(eventConfig.event)) {
@@ -222,7 +230,7 @@ function performEventLoop(actionsConfig) {
                     break;
                 case "setValue":
                     if (_.isFunction(v = eventConfig.value)) {
-                        v = eventConfig.value(actionsConfig, eventConfig, $e);
+                        v = eventConfig.value(eventConfig, $e);
                     } else {
                         v = eventConfig.value;
                     }
@@ -230,7 +238,7 @@ function performEventLoop(actionsConfig) {
                     break;
                 case "setText":
                     if (_.isFunction(eventConfig.text)) {
-                        v = eventConfig.text(actionsConfig, eventConfig, $e);
+                        v = eventConfig.text(eventConfig, $e);
                     } else {
                         v = eventConfig.text;
                     }
@@ -238,7 +246,7 @@ function performEventLoop(actionsConfig) {
                     break;
                 case "setHtml":
                     if (_.isFunction(eventConfig.html)) {
-                        v = eventConfig.html(actionsConfig, eventConfig, $e);
+                        v = eventConfig.html(eventConfig, $e);
                     } else {
                         v = eventConfig.html;
                     }
@@ -247,14 +255,14 @@ function performEventLoop(actionsConfig) {
                 default:
                     var o;
                     if (_.isFunction(eventConfig.eventOptions)) {
-                        o = eventConfig.eventOptions(actionsConfig, eventConfig, $e);
+                        o = eventConfig.eventOptions(eventConfig, $e);
                     } else {
                         o = eventConfig.eventOptions;
                     }
                     $e.simulate(eventConfig.event, o);
             }
         } else {
-            loopConfig.stop("don't known what to do. eventId: " + eventConfig.id);
+            stopEventLoop("don't known what to do. eventId: " + eventConfig.id);
             return;
         }
 
@@ -262,19 +270,19 @@ function performEventLoop(actionsConfig) {
         if ($e !== undefined && $e.length > 0 && eventConfig.afterFound) {
             var eId;
             if (_.isFunction(eventConfig.afterFound)) {
-                eId = eventConfig.afterFound(actionsConfig, eventConfig, $e);
+                eId = eventConfig.afterFound(eventConfig, $e);
             } else if (_.isString(eventConfig.afterFound)) {
                 eId = eventConfig.afterFound;
             }
             if (eId && _.isString(eId)) {
-                startNextEventLoopTimerById(actionsConfig, eId);
+                startNextEventLoopTimerById(eId);
                 startedNextEventLoop = true;
             }
         }
 
         //*** after perform event.***
         if (_.isFunction(actionsConfig.performAfterEvent)) {
-            actionsConfig.performAfterEvent(actionsConfig, eventConfig, $e);
+            actionsConfig.performAfterEvent(eventConfig, $e);
         }
         if (!startedNextEventLoop) {
             actionsConfig.nextEventIndex++;
