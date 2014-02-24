@@ -1,132 +1,219 @@
-var actionsConfig = {
-    //all function have the parameters: actionsConfig and jQuery Object.
-    events: [
-        {
-            "id": "doSomething",
-            "label": "doSomethingLabel",
-            //optional jQuery selector.
-            //it can be a string or function returning a string
-            "selector": "#someElement",
-            //if event is String,then it must be :
-            //1. jQuery event name.
-            //2. "setValue"
-            //3. "setText"
-            //4. "setHtml"
-            //5. "remove"
-            //else event must be function.
-            "event": "click",
-            //for event options,according to jquery-simulate-ext
-            //can be object or function returning object
-            "eventOptions": {},
-            "value": 1, //or function , valid if event is "setValue"
-            "text": "abc", //or function , valid if event is "setText"
-            "html": "<b>h</b>", //or function , valid if event is "setHtml"
-            "waitBeforeMillis": 3000, //wait milliseconds before perform this action
-            //when "selector" is not found,and if you specify this parameter, the "event" is not perform, it can be:
-            //1. the id of another event;
-            //2. function, can return id of another event;
-            //3. "stopApp": means stop the whole application.
-            "ifNone": "doOtherThing",
-            //go to another event after "selector" is found and event performed.
-            //can be:
-            //1. the id of another event;
-            //2. function, can return id of another event;
-            "afterFound": "doAnotherThing"
-        }
-    ],
-    //called before perform event.
-    //return false to stop event.
-    performBeforeEvent: function(eventConfig) {
-    },
-    //called after perform event.
-    performAfterEvent: function(eventConfig) {
+var eventLoopLabel = "Robot";
+var eventLoopId = "elRobot";
+
+//all function callback have the parameters: jQuery Object.
+var events = [
+    /*
+     {
+     "id": "doSomething",
+     "label": "doSomethingLabel",
+     //optional jQuery selector.
+     //it can be a string or function returning a string
+     "selector": "#someElement",
+     //if event is String,then it must be :
+     //1. jQuery event name.
+     //2. "setValue"
+     //3. "setText"
+     //4. "setHtml"
+     //5. "remove"
+     //else event must be function.
+     "event": "click",
+     //for event options,according to jquery-simulate-ext
+     //can be object or function returning object
+     "eventOptions": {},
+     "value": 1, //or function , valid if event is "setValue"
+     "text": "abc", //or function , valid if event is "setText"
+     "html": "<b>h</b>", //or function , valid if event is "setHtml"
+     "waitBeforeMillis": 3000, //wait milliseconds before perform this action
+     //when "selector" is not found,and if you specify this parameter, the "event" is not perform, it can be:
+     //1. the id of another event;
+     //2. function, can return id of another event;
+     //3. "stopApp": means stop the whole application.
+     "ifNone": "doOtherThing",
+     //go to another event after "selector" is found and event performed.
+     //can be:
+     //1. the id of another event;
+     //2. function, can return id of another event;
+     "afterFound": "doAnotherThing"
+     }
+     */
+];
+
+var stopCommandReceived = false;
+var stopReason = "";
+var running = false;
+var eventTimeoutId;
+var nextEventIndex = 0; //next event performed.
+var currentEvent;//
+//
+//used for register event listener,event:
+//beforeEvent: called before performing one event,return false to stop performing.
+//afterEvent: called after performing one event.
+//beforeStart: called before starting event loop.
+//afterStop: called after event loop stopped.
+//log: function(msg,level){}, called to log message,return true to stop output to console
+var listenerHolder = jQuery("<div/>").appendTo(jQuery("body"));
+
+function IntValidator(min, max, label) {
+    this.min = min || 0;
+    this.max = max || 2147483647;
+    this.label = label;
+}
+IntValidator.prototype.min = 0;
+IntValidator.prototype.max = 2147483647;
+IntValidator.prototype.label = "";
+IntValidator.prototype.check = function(value, label) {
+    var i = parseInt(value);
+    if (isNaN(i)) {
+        throw (label || this.label) + "必须是整数！";
     }
-    ,
-    eventInterval: 3000, //default interval millisecond between events.
-    maxFailFinds: 5, //when event needs find "selector",try find the element.
-    findInterval: 1500, //wait milliseconds between fail finds.
-    nextEventIndex: 0, //next event performed.
-    loopCount: 0,
-    loopMax: 0//max event loop
-    ,
-    "stopCommandReceived": false,
-    "stopReason": "",
-    "eventTimeoutId": null,
-    //user define it
-    "beforeStart": function() {
-    },
-    "afterStop": function() {
-        if (this.eventTimeoutId !== undefined && this.eventTimeoutId !== null) {
-            window.clearTimeout(this.eventTimeoutId);
-        }
-        console.info("app stop. reason: " + this.stopReason);
+    if (i < this.min) {
+        throw (label || this.label) + "不能小于" + this.min + "！";
+    }
+    if (i > this.max) {
+        throw (label || this.label) + "不能大于" + this.max + "！";
     }
 };
 
+var LOG_LEVEL_DEBUG = 3;
+var LOG_LEVEL_INFO = 4;
+var LOG_LEVEL_WARN = 5;
+var LOG_LEVEL_ERROR = 6;
+
+var loopCount = 0;
+var cfg = {
+    loopMax: 0, //max event loop
+    eventInterval: 3000, //default interval millisecond between events.
+    maxFailFinds: 5, //when event needs find "selector",try find the element.
+    reFindInterval: 1500, //wait milliseconds between fail finds.
+    logLevel: LOG_LEVEL_DEBUG
+};
+
+var cfgMeta = {
+    loopMax: {label: "循环次数", "validator": new IntValidator(0, null)}, //max event loop
+    eventInterval: {label: "默认事件间暂停时间(ms)", "validator": new IntValidator(0, 3600000)}, //default interval millisecond between events.
+    maxFailFinds: {label: "重找html元素次数", "validator": new IntValidator(0, 100)}, //when event needs find "selector",try find the element.
+    reFindInterval: {label: "重找html元素间隔时间(ms)", "validator": new IntValidator(0, 3600000)}, //wait milliseconds between fail finds.
+    logLevel: {label: "日志级别", edit: {
+            type: "select",
+            options: [
+                [LOG_LEVEL_DEBUG, "调试"],
+                [LOG_LEVEL_INFO, "信息"],
+                [LOG_LEVEL_WARN, "警告"],
+                [LOG_LEVEL_ERROR, "错误"],
+            ]},
+        "validator": new IntValidator(3, 6)}
+};
+
+function readConfigValue() {
+    _.each(cfg, function(v, k) {
+        cfg[k] = GM_getValue(k, v);
+    });
+}
+;
+readConfigValue();
+
+function debug(msg) {
+    if (cfg.logLevel < LOG_LEVEL_DEBUG) {
+        return;
+    }
+    if (listenerHolder.triggerHandler("log", [msg, cfg.logLevel]) === true) {
+        return;
+    }
+    console.debug(msg);
+}
+
+function info(msg) {
+    if (cfg.logLevel < LOG_LEVEL_INFO) {
+        return;
+    }
+    if (listenerHolder.triggerHandler("log", [msg, cfg.logLevel]) === true) {
+        return;
+    }
+    console.info(msg);
+}
+
+function warn(msg) {
+    if (cfg.logLevel < LOG_LEVEL_WARN) {
+        return;
+    }
+    if (listenerHolder.triggerHandler("log", [msg, cfg.logLevel]) === true) {
+        return;
+    }
+    console.warn(msg);
+}
+
+function error(msg) {
+    if (cfg.logLevel < LOG_LEVEL_ERROR) {
+        return;
+    }
+    if (listenerHolder.triggerHandler("log", [msg, cfg.logLevel]) === true) {
+        return;
+    }
+    console.error(msg);
+}
 
 function startEventLoop() {
-    actionsConfig.stopCommandReceived = false;
-    actionsConfig.stopReason = "";
-    if (_.isFunction(actionsConfig.beforeStart)) {
-        actionsConfig.beforeStart();
-    }
-    setEventLoopTimer(actionsConfig);
+    stopCommandReceived = false;
+    stopReason = "";
+    listenerHolder.triggerHandler("beforeStart");
+    running = true;
+    info("程序开始运行...");
+    setEventTimer();
 }
 
 function stopEventLoop(reason) {
-    actionsConfig.stopCommandReceived = true;
-    actionsConfig.stopReason = reason;
-    if (_.isFunction(actionsConfig.afterStop)) {
-        actionsConfig.afterStop();
-    }
+    stopCommandReceived = true;
+    stopReason = reason;
+    info("收到停止指令。");
 }
 
 function eventLoopStopped() {
-    console.info("app stop. reason: " + actionsConfig.stopReason);
-    if (actionsConfig.eventTimeoutId !== undefined && actionsConfig.eventTimeoutId !== null) {
-        window.clearTimeout(actionsConfig.eventTimeoutId);
-        actionsConfig.eventTimeoutId = null;
+    running = false;
+    if (eventTimeoutId !== undefined && eventTimeoutId !== null) {
+        window.clearTimeout(eventTimeoutId);
+        eventTimeoutId = null;
     }
-    if (_.isFunction(actionsConfig.afterStop)) {
-        actionsConfig.afterStop();
-    }
+    listenerHolder.triggerHandler("afterStop");
+    info("程序停止运行。");
 }
 
 
-function setEventLoopTimer(intervalMillis) {
-    if (actionsConfig.stopCommandReceived) {
+function setEventTimer(refind) {
+    if (stopCommandReceived) {
         eventLoopStopped();
         return;
     }
-    checkNextEventIndex(actionsConfig);
-    if (actionsConfig.nextEventIndex === 0) {
-        actionsConfig.loopCount++;
-        if (actionsConfig.loopMax > 0 && actionsConfig.loopCount > actionsConfig.loopMax) {
-            stopEventLoop("arrives loopMax: " + actionsConfig.loopMax);
+    checkNextEventIndex();
+    if (nextEventIndex === 0 && refind !== true) {
+        loopCount++;
+        if (cfg.loopMax > 0 && loopCount > cfg.loopMax) {
+            stopEventLoop("达到最大循环次数: " + cfg.loopMax);
             return;
         }
     }
+    var intervalMillis;
     if (intervalMillis === undefined || intervalMillis < 0) {
-        intervalMillis = actionsConfig.events[actionsConfig.nextEventIndex].waitBeforeMillis;
-        if (intervalMillis === undefined || intervalMillis < 0) {
-            intervalMillis = actionsConfig.eventInterval >= 0 ? actionsConfig.eventInterval : 3000;
+        if (refind === true) {
+            intervalMillis = cfg.reFindInterval;
+        } else {
+            intervalMillis = events[nextEventIndex].waitBeforeMillis;
+            if (intervalMillis === undefined || intervalMillis < 0) {
+                intervalMillis = cfg.eventInterval >= 0 ? cfg.eventInterval : 3000;
+            }
         }
     }
-    actionsConfig.eventTimeoutId = setTimeout(function() {
-        performEventLoop(actionsConfig);
+    debug(intervalMillis + "毫秒后操作下一事件。");
+    eventTimeoutId = setTimeout(function() {
+        performEventLoop();
     }, intervalMillis);
 }
 
-/**
- * 
- * @param {type} actionsConfig
- * @param {type} eventId
- * @returns {Number}
- */
+
 function findEventConfigById(eventId) {
-    if (_.isArray(actionsConfig.events)) {
-        for (var i = 0; i < actionsConfig.events.length; i++) {
-            if (actionsConfig.events[i].id === eventId) {
+    if (_.isArray(events)) {
+        for (var i = 0; i < events.length; i++) {
+            if (events[i].id === eventId) {
                 return i;
             }
         }
@@ -134,159 +221,269 @@ function findEventConfigById(eventId) {
     return null;
 }
 
-function startNextEventLoopTimerById(eId) {
+function startNextEventTimerById(eId) {
     var i = findEventConfigById(eId);
     if (i === null) {
-        stopEventLoop("can't found event config with id: " + eId);
+        stopEventLoop("找不到此事件: " + eId);
     } else {
-        actionsConfig.nextEventIndex = i;
-        setEventLoopTimer(actionsConfig);
+        nextEventIndex = i;
+        setEventTimer();
     }
 }
 
-function checkNextEventIndex(actionsConfig) {
-    if (actionsConfig.nextEventIndex === undefined ||
-            actionsConfig.nextEventIndex === null ||
-            actionsConfig.nextEventIndex < 0 ||
-            actionsConfig.nextEventIndex >= actionsConfig.events.length) {
-        actionsConfig.nextEventIndex = 0;
+function checkNextEventIndex() {
+    if (nextEventIndex === null || nextEventIndex < 0 ||
+            nextEventIndex >= events.length) {
+        nextEventIndex = 0;
     }
 }
-function performEventLoop(actionsConfig) {
-    if (actionsConfig.stopCommandReceived) {
+function performEventLoop() {
+    if (stopCommandReceived) {
         eventLoopStopped();
         return;
     }
-    if (!_.isArray(actionsConfig.events) || actionsConfig.events.length === 0) {
+    if (!_.isArray(events) || events.length === 0) {
         stopEventLoop("没事件序列！");
         return;
     }
-    checkNextEventIndex(actionsConfig);
-    var eventConfig = actionsConfig.events[actionsConfig.nextEventIndex];
-    var performAllowed = true;
-    if (_.isFunction(actionsConfig.performBeforeEvent)) {
-        var s = actionsConfig.performBeforeEvent(eventConfig);
-        if (s === false) {
-            performAllowed = false;
-        }
-    }
+    checkNextEventIndex();
+    var startedNextEventLoop = false;
+    currentEvent = events[nextEventIndex];
+    debug("执行事件：" + currentEvent.label);
+    var performAllowed = listenerHolder.triggerHandler("beforeEvent", [currentEvent]) !== false;
     if (performAllowed) {
         var $e;
-        if (eventConfig.selector !== undefined && eventConfig.selector !== null) {
+        if (currentEvent.selector !== undefined && currentEvent.selector !== null) {
             var s;
-            if (_.isFunction(eventConfig.selector)) {
-                s = eventConfig.selector(eventConfig);
-            } else if (_.isString(eventConfig.selector)) {
-                s = eventConfig.selector;
+            if (_.isFunction(currentEvent.selector)) {
+                s = currentEvent.selector(currentEvent);
+            } else if (_.isString(currentEvent.selector)) {
+                s = currentEvent.selector;
             } else {
-                stopEventLoop("wrong selector:" + eventConfig.selector + " of " + eventConfig.id);
+                stopEventLoop("错误的selector:" + currentEvent.selector + " of " + currentEvent.id);
                 return;
             }
             $e = jQuery(s);
             if ($e.length === 0) {
-                if (!_.isNumber(eventConfig.failFindCount)) {
-                    eventConfig.failFindCount = 1;
+                if (!_.isNumber(currentEvent.failFindCount)) {
+                    currentEvent.failFindCount = 1;
                 } else {
-                    eventConfig.failFindCount++;
+                    currentEvent.failFindCount++;
                 }
-                if (eventConfig.failFindCount < actionsConfig.maxFailFinds) {
-                    setEventLoopTimer(actionsConfig);
+
+                warn(currentEvent.failFindCount + ".找不到:" + s);
+
+                if (currentEvent.failFindCount < cfg.maxFailFinds) {
+                    setEventTimer(true);
                     return;
                 }
-                if (eventConfig.ifNone !== undefined && eventConfig.ifNone !== null) {
+                if (currentEvent.ifNone !== undefined && currentEvent.ifNone !== null) {
                     var eId;
-                    if (_.isFunction(eventConfig.ifNone)) {
-                        eId = eventConfig.ifNone(eventConfig);
-                    } else if (_.isString(eventConfig.ifNone) && eventConfig.ifNone.length > 0) {
-                        eId = eventConfig.ifNone;
+                    if (_.isFunction(currentEvent.ifNone)) {
+                        eId = currentEvent.ifNone(currentEvent);
+                    } else if (_.isString(currentEvent.ifNone) && currentEvent.ifNone.length > 0) {
+                        eId = currentEvent.ifNone;
                     }
                     if (eId) {
                         if (eId === "stopApp") {
-                            stopEventLoop("can't found: " + $e.selector);
+                            stopEventLoop("程序内部要求停止。");
                         } else {
-                            startNextEventLoopTimerById(eId);
+                            info("跳到：" + eId);
+                            startNextEventTimerById(eId);
                         }
                         return;
                     }
                 }
             } else {
-                eventConfig.failFindCount = 0;
+                currentEvent.failFindCount = 0;
             }
         }
 
-        var startedNextEventLoop = false;
         //***perform event***        
-        if (_.isFunction(eventConfig.event)) {
-            var eId = eventConfig.event(eventConfig, $e);
+        if (_.isFunction(currentEvent.event)) {
+            var eId = currentEvent.event($e);
             if (eId && _.isString(eId)) {
-                startNextEventLoopTimerById(eId);
+                info("跳到：" + eId);
+                startNextEventTimerById(eId);
                 startedNextEventLoop = true;
             }
-        } else if ($e !== undefined && $e.length > 0 && _.isString(eventConfig.event)) {
+        } else if ($e !== undefined && $e.length > 0 && _.isString(currentEvent.event)) {
             var v;
-            switch (eventConfig.event) {
+            switch (currentEvent.event) {
                 case "remove":
                     $e.remove();
                     break;
                 case "setValue":
-                    if (_.isFunction(v = eventConfig.value)) {
-                        v = eventConfig.value(eventConfig, $e);
+                    if (_.isFunction(currentEvent.value)) {
+                        v = currentEvent.value($e);
                     } else {
-                        v = eventConfig.value;
+                        v = currentEvent.value;
                     }
                     $e.val(v === undefined || v === null ? "" : v);
                     break;
                 case "setText":
-                    if (_.isFunction(eventConfig.text)) {
-                        v = eventConfig.text(eventConfig, $e);
+                    if (_.isFunction(currentEvent.text)) {
+                        v = currentEvent.text($e);
                     } else {
-                        v = eventConfig.text;
+                        v = currentEvent.text;
                     }
                     $e.text(v === undefined || v === null ? "" : v);
                     break;
                 case "setHtml":
-                    if (_.isFunction(eventConfig.html)) {
-                        v = eventConfig.html(eventConfig, $e);
+                    if (_.isFunction(currentEvent.html)) {
+                        v = currentEvent.html($e);
                     } else {
-                        v = eventConfig.html;
+                        v = currentEvent.html;
                     }
                     $e.html(v === undefined || v === null ? "" : v);
                     break;
                 default:
                     var o;
-                    if (_.isFunction(eventConfig.eventOptions)) {
-                        o = eventConfig.eventOptions(eventConfig, $e);
+                    if (_.isFunction(currentEvent.eventOptions)) {
+                        o = currentEvent.eventOptions($e);
                     } else {
-                        o = eventConfig.eventOptions;
+                        o = currentEvent.eventOptions;
                     }
-                    $e.simulate(eventConfig.event, o);
+                    $e.simulate(currentEvent.event, o);
             }
         } else {
-            stopEventLoop("don't known what to do. eventId: " + eventConfig.id);
+            stopEventLoop("不知如何处理此事件: " + currentEvent.id);
             return;
         }
 
         //***after found element and perform event.***
-        if ($e !== undefined && $e.length > 0 && eventConfig.afterFound) {
+        if ($e !== undefined && $e.length > 0 && currentEvent.afterFound) {
             var eId;
-            if (_.isFunction(eventConfig.afterFound)) {
-                eId = eventConfig.afterFound(eventConfig, $e);
-            } else if (_.isString(eventConfig.afterFound)) {
-                eId = eventConfig.afterFound;
+            if (_.isFunction(currentEvent.afterFound)) {
+                eId = currentEvent.afterFound($e);
+            } else if (_.isString(currentEvent.afterFound)) {
+                eId = currentEvent.afterFound;
             }
             if (eId && _.isString(eId)) {
-                startNextEventLoopTimerById(eId);
+                info("跳到：" + eId);
+                startNextEventTimerById(eId);
                 startedNextEventLoop = true;
             }
         }
 
         //*** after perform event.***
-        if (_.isFunction(actionsConfig.performAfterEvent)) {
-            actionsConfig.performAfterEvent(eventConfig, $e);
-        }
-        if (!startedNextEventLoop) {
-            actionsConfig.nextEventIndex++;
-            setEventLoopTimer(actionsConfig);
-        }
+        listenerHolder.triggerHandler("afterEvent", [currentEvent]);
+    }
+    if (!startedNextEventLoop) {
+        nextEventIndex++;
+        setEventTimer();
     }
 }
+
+
+function buildEventLoopControlPane() {
+    var $top = jQuery("<div/>").addClass("loopControl");
+    var $startButton = jQuery("<button/>").addClass("startLoop")
+            .appendTo($top)
+            .button({"label": "开始", "disabled": false})
+            .click(function(event) {
+                $(this).button("disable");
+                if (!running) {
+                    startEventLoop();
+                }
+            });
+
+    var $stopButton = jQuery("<button/>").addClass("stopLoop")
+            .appendTo($top)
+            .button({"label": "停止", "disabled": true})
+            .click(function(event) {
+                $(this).button("disable");
+                if (running) {
+                    stopEventLoop("用户要求停止。");
+                }
+            });
+    listenerHolder.on("beforeStart", function(event) {
+        $startButton.button("disable");
+        $stopButton.button("enable");
+    });
+    listenerHolder.on("afterStop", function(event) {
+        $startButton.button("enable");
+        $stopButton.button("disable");
+    });
+
+    return $top;
+}
+
+function buildInputElement(type, options/*if type is "select", it must be array of array,or object.*/) {
+    if (type === undefined || type === null) {
+        type = "text";
+    }
+    var simpleTypes = ["text",
+        "password",
+        "checkbox",
+        "radio",
+        "submit",
+        "image",
+        "reset",
+        "button",
+        "file",
+        "hidden"
+    ];
+    var $e;
+    switch (type) {
+        case "textarea":
+            $e = jQuery("<textarea/>");
+            break;
+        case "select":
+            $e = jQuery("<select/>");
+            var at = _.isArray(options);
+            _.each(options, function(a, b) {
+                $e.append(jQuery("<option/>").attr("value", at ? a[0] : b)
+                        .text(at ? a[1] : a));
+            });
+            break;
+        default:
+            if (_.indexOf(simpleTypes, type) === -1) {
+                throw "错误的input type:" + type;
+            }
+            $e = jQuery("<input type='" + type + "'/>");
+    }
+    return $e;
+}
+
+
+function buildEventLoopConfigPane() {
+    var $top = jQuery("<div/>").addClass("loopConfig");
+    var tdCss = {"padding": "3px"};
+    var $tb = jQuery("<table/>").css({"empty-cell": "show", "border-collapse": "collapse"}).appendTo($top);
+    _.each(cfg, function(v, k) {
+        var $tr = jQuery("<tr/>").css({"border-bottom": "1px solid #ccc"}).appendTo($tb);
+        var m = cfgMeta[k];
+        jQuery("<label/>").text(m.label)
+                .appendTo(jQuery("<td/>")
+                        .css(tdCss).appendTo($tr));
+        if (!_.isObject(m.edit)) {
+            m.edit = {"type": "text"};
+        }
+        var $e = buildInputElement(m.edit.type, m.edit.options).appendTo(
+                jQuery("<td/>").css(tdCss).appendTo($tr));
+        if (_.isObject(m.edit.attrs)) {
+            $e.attr(m.edit.attrs);
+        }
+        if (v !== undefined && v !== null) {
+            $e.val(v);
+        }
+        $e.change(function(event) {
+            var v = jQuery(this).val();
+            if (_.isObject(m.validator)) {
+                try {
+                    v = m.validator.check(v, m.label);
+                    cfg[k] = v;
+                    GM_setValue(eventLoopId + ".cfg." + k, v);
+                    GM_notification("已经保存新值：" + v);
+                } catch (err) {
+                    GM_notification(err, "输入错误");
+                }
+            }
+        });
+    });
+
+    return $top;
+}
+
+
