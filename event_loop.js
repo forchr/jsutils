@@ -486,4 +486,38 @@ function buildEventLoopConfigPane() {
     return $top;
 }
 
+function buildLogPane() {
+    var $top = jQuery("<div/>").addClass("log").css({
+        "min-height": "1em",
+        "background-color": "black",
+        "color": "white",
+        padding: "3px",
+        "max-height": "100px",
+        "overflow": "auto"});
+    listenerHolder.on("log", function(event, msg, level) {
+        $top.html(msg);
+        if (level > LOG_LEVEL_INFO) {
+            console.error(msg);
+        }
+        return true;
+    });
+}
 
+
+function showUI() {
+    var $top = jQuery("<div/>").attr("id", eventLoopId)
+            .css({"position": "absolute",
+                zIndex: _.random(3, 1000),
+                "right": _.random(0, 20) + "px",
+                "top": _.random(0, 20) + "px",
+                "padding": "3px"
+            })
+            .appendTo(jQuery("body"))
+            .resizable();
+    var $tt = jQuery("<h3/>").text(eventLoopLabel).appendTo($top);
+
+    $top.append(buildLogPane());
+    $top.append(buildEventLoopControlPane());
+    $top.append(buildEventLoopConfigPane());
+    $top.draggable({handle: $tt});
+}
