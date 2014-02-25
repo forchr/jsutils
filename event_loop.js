@@ -505,9 +505,10 @@ function buildLogPane() {
 
 
 function showUI() {
+    var zIndex = _.isFunction(jQuery.topZIndex) ? jQuery.topZIndex : 100000;
     var $top = jQuery("<div/>").attr("id", eventLoopId)
             .css({"position": "absolute",
-                zIndex: _.random(3, 1000),
+                zIndex: zIndex,
                 "right": _.random(0, 20) + "px",
                 "top": _.random(0, 20) + "px",
                 "padding": "3px"
@@ -520,4 +521,5 @@ function showUI() {
     $top.append(buildEventLoopControlPane());
     $top.append(buildEventLoopConfigPane());
     $top.draggable({handle: $tt});
+    return $top;
 }
