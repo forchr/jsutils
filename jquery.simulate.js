@@ -10,7 +10,7 @@
  */
 
 ;
-(function($, undefined) {
+(function ($, undefined) {
     "use strict";
 
     var rkeyEvent = /^key/,
@@ -22,24 +22,26 @@
     }
 
     function windowOfDocument(doc) {
-        for (var i = 0; i < window.frames.length; i += 1) {
-            try {
+        try {
+            for (var i = 0; i < window.frames.length; i += 1) {
+
                 if (window.frames[i].document === doc) {
                     return window.frames[i];
                 }
-            } catch (err) {
+
             }
+        } catch (err) {
         }
         return window;
     }
 
-    $.fn.simulate = function(type, options) {
-        return this.each(function() {
+    $.fn.simulate = function (type, options) {
+        return this.each(function () {
             new $.simulate(this, type, options);
         });
     };
 
-    $.simulate = function(elem, type, options) {
+    $.simulate = function (elem, type, options) {
         var method = $.camelCase("simulate-" + type);
 
         this.target = elem;
@@ -85,11 +87,11 @@
     });
 
     $.extend($.simulate.prototype, {
-        simulateEvent: function(elem, type, options) {
+        simulateEvent: function (elem, type, options) {
             var event = this.createEvent(type, options);
             this.dispatchEvent(elem, type, event, options);
         },
-        createEvent: function(type, options) {
+        createEvent: function (type, options) {
             if (rkeyEvent.test(type)) {
                 return this.keyEvent(type, options);
             }
@@ -98,7 +100,7 @@
                 return this.mouseEvent(type, options);
             }
         },
-        mouseEvent: function(type, options) {
+        mouseEvent: function (type, options) {
             var event,
                     eventDoc,
                     doc = isDocument(this.target) ? this.target : (this.target.ownerDocument || document),
@@ -142,14 +144,14 @@
                     body = eventDoc.body;
 
                     Object.defineProperty(event, "pageX", {
-                        get: function() {
+                        get: function () {
                             return options.clientX +
                                     (docEle && docEle.scrollLeft || body && body.scrollLeft || 0) -
                                     (docEle && docEle.clientLeft || body && body.clientLeft || 0);
                         }
                     });
                     Object.defineProperty(event, "pageY", {
-                        get: function() {
+                        get: function () {
                             return options.clientY +
                                     (docEle && docEle.scrollTop || body && body.scrollTop || 0) -
                                     (docEle && docEle.clientTop || body && body.clientTop || 0);
@@ -171,7 +173,7 @@
 
             return event;
         },
-        keyEvent: function(type, options) {
+        keyEvent: function (type, options) {
             var event, doc;
             options = $.extend({
                 bubbles: true,
@@ -221,14 +223,14 @@
 
             return event;
         },
-        dispatchEvent: function(elem, type, event) {
+        dispatchEvent: function (elem, type, event) {
             if (elem.dispatchEvent) {
                 elem.dispatchEvent(event);
             } else if (elem.fireEvent) {
                 elem.fireEvent("on" + type, event);
             }
         },
-        simulateFocus: function() {
+        simulateFocus: function () {
             var focusinEvent,
                     triggered = false,
                     element = $(this.target);
@@ -248,7 +250,7 @@
             }
             element.unbind("focus", trigger);
         },
-        simulateBlur: function() {
+        simulateBlur: function () {
             var focusoutEvent,
                     triggered = false,
                     element = $(this.target);
@@ -261,7 +263,7 @@
             element[ 0 ].blur();
 
             // blur events are async in IE
-            setTimeout(function() {
+            setTimeout(function () {
                 // IE won't let the blur occur if the window is inactive
                 if (element[ 0 ].ownerDocument.activeElement === element[ 0 ]) {
                     element[ 0 ].ownerDocument.body.focus();
@@ -324,7 +326,7 @@
     }
 
     $.extend($.simulate.prototype, {
-        simulateDrag: function() {
+        simulateDrag: function () {
             var i = 0,
                     target = this.target,
                     options = this.options,
